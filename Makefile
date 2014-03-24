@@ -3,7 +3,14 @@ BUILD_PATH = ./build
 SRC_PATH = ./src
 
 DEFAULT_TIMEOUT = 5
-LIB_SUFFIX = -mt
+SYSTEM_TYPE = $(shell uname -s | tr -d '\n')
+
+ifeq ($(SYSTEM_TYPE),Darwin)
+	LIB_SUFFIX=-mt
+else 
+	LIB_SUFFIX= 
+endif
+
 MAC_OS_LIB_PATH = /opt/local/lib
 
 CPP = g++
@@ -12,6 +19,7 @@ LFLAGS = -L$(MAC_OS_LIB_PATH) -lboost_system$(LIB_SUFFIX) -lboost_thread$(LIB_SU
 
 BUILD_OBJECTS = $(BUILD_PATH)/main.o $(BUILD_PATH)/Server.o $(BUILD_PATH)/ProcessRunner.o $(BUILD_PATH)/ConfigParser.o
 
+.PHONY: build
 build: $(BUILD_PATH)/$(DAEMON_NAME)
 
 .PHONY: run
