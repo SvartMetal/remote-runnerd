@@ -3,6 +3,7 @@
 #include "Server.h"
 
 using boost::asio::ip::tcp;
+using boost::asio::local::stream_protocol;
 
 Server::Server(short port,
     size_t thread_pool_size,
@@ -12,39 +13,64 @@ Server::Server(short port,
     timeout_(timeout),
     quit_signals_(io_service_),
     update_config_signal_(io_service_),
-    acceptor_(io_service_),
     config_parser_(settings::config_file_name),
-    config_(config_parser_.parse_config())
+    config_(config_parser_.parse_config()),
+    tcp_acceptor_(io_service_), 
+    tcp_endpoint_(tcp::endpoint(tcp::v4(), port)),
+
+    #ifdef BOOST_ASIO_HAS_LOCAL_SOCKETS
+    local_acceptor_(io_service_), 
+    local_endpoint_(settings::local_socket_address)
+    #endif
+
 {
-    // Setting signals 
+    if (config_.empty()) { throw std::logic_error("Config is empty. "); }
+    // Setting quit signals 
     quit_signals_.add(SIGINT);
     quit_signals_.add(SIGTERM);
 
     #ifdef BOOST_SIGQUIT
     quit_signals_.add(SIGQUIT);
     #endif
-
     // Signal for config updating
     update_config_signal_.add(SIGHUP);
-
-    // Configuring server endpoint
-    boost::system::error_code ec;
-    auto endpoint = tcp::endpoint(tcp::v4(), port);
-    acceptor_.open(endpoint.protocol());
-    acceptor_.set_option(tcp::acceptor::reuse_address(true));
-    acceptor_.bind(endpoint, ec);
-    acceptor_.listen();
-
-    if (ec) {
-        throw std::logic_error("Port is already used. ");
-    }
-
     // Setting handlers for signals 
     quit_signals_.async_wait(boost::bind(&Server::handle_stop, this));
     update_config_signal_.async_wait(boost::bind(&Server::handle_update_config, this));
 
-    do_accept();
+    // Configuring endpoints and starting listening for connections
+    configure_tcp_endpoint();
+    configure_local_endpoint();
 }
+
+void Server::configure_tcp_endpoint() {
+    boost::system::error_code ec;
+    tcp_acceptor_.open(tcp_endpoint_.protocol());
+    tcp_acceptor_.set_option(tcp::acceptor::reuse_address(true));
+    tcp_acceptor_.bind(tcp_endpoint_, ec);
+
+    if (ec) { throw std::logic_error("Port is already used. "); }
+
+    tcp_acceptor_.listen();
+    tcp_accept();
+}
+
+#ifdef BOOST_ASIO_HAS_LOCAL_SOCKETS
+void Server::configure_local_endpoint() {
+    // Need to unbind address
+    ::unlink(settings::local_socket_address);
+
+    boost::system::error_code ec;
+    local_acceptor_.open(local_endpoint_.protocol());
+    local_acceptor_.set_option(stream_protocol::acceptor::reuse_address(true));
+    local_acceptor_.bind(local_endpoint_, ec);
+
+    if (ec) { throw std::logic_error("Local address is already used. "); }
+
+    local_acceptor_.listen();
+    local_accept();
+}
+#endif 
 
 void Server::run() {
     // Our thread pool
@@ -61,17 +87,34 @@ void Server::run() {
     }
 }
 
-void Server::do_accept() {
-    auto session = std::make_shared<Session>(io_service_, config_, config_mutex_);
-    acceptor_.async_accept(session->socket(), 
+void Server::tcp_accept() {
+    auto session = std::make_shared<Session<tcp::socket>>(io_service_, timeout_, config_, config_mutex_);
+
+    tcp_acceptor_.async_accept(session->socket(), 
         [this, session](boost::system::error_code ec) {
             if (!ec) {
                 session->start();
             }
             // Go on accepting new sessions
-            do_accept();
+            tcp_accept();
         });
 }
+
+#ifdef BOOST_ASIO_HAS_LOCAL_SOCKETS
+void Server::local_accept() {
+    auto session = std::make_shared<Session<stream_protocol::socket>>(
+        io_service_, timeout_, config_, config_mutex_);
+
+    local_acceptor_.async_accept(session->socket(), 
+        [this, session](boost::system::error_code ec) {
+            if (!ec) {
+                session->start();
+            }
+            // Go on accepting new sessions
+            local_accept();
+        });
+}
+#endif
 
 void Server::handle_update_config() {
     update_config_signal_.async_wait(boost::bind(&Server::handle_update_config, this));

@@ -8,10 +8,10 @@ ConfigParser::ConfigParser(const std::string& config_name)
     : config_name_(config_name)
 {}
 
-std::vector<std::string> ConfigParser::parse_config() {
+config_data_type ConfigParser::parse_config() const {
     std::ifstream in(config_name_);
 
-    std::vector<std::string> programs;
+    config_data_type programs;
     if (!in) {
         // File does not exist
         return programs;
@@ -27,3 +27,4 @@ std::vector<std::string> ConfigParser::parse_config() {
 
     return programs;
 }
+

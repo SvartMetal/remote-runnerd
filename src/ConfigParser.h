@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 
+#include "types.h"
+
 class ConfigParser {
 public: // constructors
 
@@ -11,7 +13,7 @@ public: // constructors
 
 public: // methods
     
-    std::vector<std::string> parse_config();
+    config_data_type parse_config() const;
 
 private: // fields
     

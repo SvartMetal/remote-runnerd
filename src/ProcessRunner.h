@@ -11,6 +11,7 @@
 #include <boost/atomic.hpp>
 
 #include "settings.h"
+#include "types.h"
 
 class ProcessRunner {
 public: // constructors
@@ -23,7 +24,7 @@ public: // methods
 
     std::pair<bool, bool> attempt_launch();
 
-    std::vector<char> get_execution_result();
+    buffer_type get_execution_result();
 
     pid_t get_pid() { 
         boost::unique_lock<boost::mutex> lock(queue_mutex_);
@@ -34,11 +35,11 @@ private: // methods
 
     void exec_and_bind_stdout(const std::vector<std::string>& args);
     
-    std::vector<std::string> tokenize_command(const std::string& cmd);
+    std::vector<std::string> tokenize_command(const std::string& cmd) const;
 
     bool search_cmd(const std::string& program);
 
-    char** create_argv(const std::vector<std::string>& args);
+    char** create_argv(const std::vector<std::string>& args) const;
 
 private: // fields
     
@@ -48,7 +49,7 @@ private: // fields
     std::queue<std::string> cmd_queue_;
 
     // Reference to config data & config sync stuff
-    const std::vector<std::string>& config_;
+    const config_data_type& config_;
     boost::shared_mutex& config_mutex_;
 
     // Command queue sync stuff

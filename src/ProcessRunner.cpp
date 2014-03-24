@@ -1,13 +1,12 @@
 #include <cstdlib>
+#include <algorithm>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/tokenizer.hpp>
 
-#include <iostream>
-
 #include "ProcessRunner.h"
 
-ProcessRunner::ProcessRunner(const std::vector<std::string>& config, boost::shared_mutex& config_mutex)
+ProcessRunner::ProcessRunner(const config_data_type& config, boost::shared_mutex& config_mutex)
     : config_(config),
     config_mutex_(config_mutex),
     is_running_(false), 
@@ -31,7 +30,7 @@ void ProcessRunner::commit_data(const std::string& data) {
     }
 }
 
-std::vector<std::string> ProcessRunner::tokenize_command(const std::string& cmd) {
+std::vector<std::string> ProcessRunner::tokenize_command(const std::string& cmd) const {
     boost::char_separator<char> sep(" \t");
     boost::tokenizer<boost::char_separator<char>> tokenizer(cmd, sep);
 
@@ -53,13 +52,7 @@ bool ProcessRunner::search_cmd(const std::string& program) {
     boost::shared_lock<boost::shared_mutex> lock(config_mutex_);
 
     // Searching for match
-    for (const auto& elem : config_) {
-        if (elem == program) {
-            return true;
-        }
-    }
-
-    return false;
+    return std::find(config_.begin(), config_.end(), program) != config_.end();
 }
 
 std::pair<bool, bool> ProcessRunner::attempt_launch() {
@@ -78,7 +71,6 @@ std::pair<bool, bool> ProcessRunner::attempt_launch() {
         pid_ = -1;
         return std::make_pair(true, false);
     }
-    std::cout << cmd << std::endl;
     
     // Create pipe, fork, exec and acquire child's stdout file struct pointer 
     exec_and_bind_stdout(args);
@@ -131,7 +123,7 @@ void ProcessRunner::exec_and_bind_stdout(const std::vector<std::string>& args) {
     }
 }
 
-std::vector<char> ProcessRunner::get_execution_result() {
+buffer_type ProcessRunner::get_execution_result() {
     boost::unique_lock<boost::mutex> lock(queue_mutex_);
     // Copying file struct pointer
     FILE* stdout = stdout_;
@@ -142,7 +134,7 @@ std::vector<char> ProcessRunner::get_execution_result() {
     lock.unlock();
 
     if (stdout) {
-        std::vector<char> result;
+        buffer_type result;
         char buffer[buffer_length];
 
         // Now we can read child's stdout
@@ -159,10 +151,10 @@ std::vector<char> ProcessRunner::get_execution_result() {
         return result;
     }
 
-    return std::vector<char>();
+    return buffer_type();
 }
 
-char** ProcessRunner::create_argv(const std::vector<std::string>& args) {
+char** ProcessRunner::create_argv(const std::vector<std::string>& args) const {
     char** argv = new char*[args.size() + 1];
 
     for (size_t i = 0; i < args.size(); ++i) {
