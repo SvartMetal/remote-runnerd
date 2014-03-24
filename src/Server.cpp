@@ -24,7 +24,7 @@ Server::Server(short port,
     #endif
 
 {
-    if (config_.empty()) { throw std::logic_error("Config is empty. "); }
+    if (config_.empty()) { throw std::logic_error("Config is invalid. "); }
     // Setting quit signals 
     quit_signals_.add(SIGINT);
     quit_signals_.add(SIGTERM);

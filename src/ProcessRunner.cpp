@@ -30,7 +30,7 @@ void ProcessRunner::commit_data(const std::string& data) {
     }
 }
 
-std::vector<std::string> ProcessRunner::tokenize_command(const std::string& cmd) const {
+std::vector<std::string> ProcessRunner::tokenize_cmd(const std::string& cmd) const {
     boost::char_separator<char> sep(" \t");
     boost::tokenizer<boost::char_separator<char>> tokenizer(cmd, sep);
 
@@ -47,12 +47,13 @@ std::vector<std::string> ProcessRunner::tokenize_command(const std::string& cmd)
     return args;
 }
 
-bool ProcessRunner::search_cmd(const std::string& program) {
+std::pair<bool, std::string> ProcessRunner::search_cmd(const std::string& cmd) {
     // Reader lock
     boost::shared_lock<boost::shared_mutex> lock(config_mutex_);
 
     // Searching for match
-    return std::find(config_.begin(), config_.end(), program) != config_.end();
+    auto found = config_.find(cmd) != config_.end();
+    return found ? std::make_pair(true, config_.at(cmd)) : std::make_pair(false, "");
 }
 
 std::pair<bool, bool> ProcessRunner::attempt_launch() {
@@ -65,12 +66,19 @@ std::pair<bool, bool> ProcessRunner::attempt_launch() {
     auto cmd = cmd_queue_.front();
     cmd_queue_.pop();
     // Checking command
-    auto args = tokenize_command(cmd);        
-    if (args.empty() || !search_cmd(args[0])) {
+    auto args = tokenize_cmd(cmd);        
+    if (args.empty()) {
         // Command is invalid
         pid_ = -1;
         return std::make_pair(true, false);
     }
+    auto search_result = search_cmd(args[0]);
+    if (!search_result.first) {
+        pid_ = -1;
+        return std::make_pair(true, false);
+    }
+    auto program = search_result.second;
+    args[0] = program;
     
     // Create pipe, fork, exec and acquire child's stdout file struct pointer 
     exec_and_bind_stdout(args);
@@ -113,6 +121,7 @@ void ProcessRunner::exec_and_bind_stdout(const std::vector<std::string>& args) {
         close(pipe_stdout[0]);
         dup2(pipe_stdout[1], STDOUT_FILENO);
         close(pipe_stdout[1]);
+        close(STDERR_FILENO);
 
         // Copying argv for new process executing
         char** argv = create_argv(args);

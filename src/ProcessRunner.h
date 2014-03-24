@@ -16,7 +16,7 @@
 class ProcessRunner {
 public: // constructors
 
-    ProcessRunner(const std::vector<std::string>& config, boost::shared_mutex& config_mutex);
+    ProcessRunner(const config_data_type& config, boost::shared_mutex& config_mutex);
 
 public: // methods
     
@@ -35,9 +35,9 @@ private: // methods
 
     void exec_and_bind_stdout(const std::vector<std::string>& args);
     
-    std::vector<std::string> tokenize_command(const std::string& cmd) const;
+    std::vector<std::string> tokenize_cmd(const std::string& cmd) const;
 
-    bool search_cmd(const std::string& program);
+    std::pair<bool, std::string> search_cmd(const std::string& cmd);
 
     char** create_argv(const std::vector<std::string>& args) const;
 
