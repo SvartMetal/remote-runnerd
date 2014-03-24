@@ -49,6 +49,9 @@ private: // fields
     // Signal set for handling SIGCHLD
     boost::asio::signal_set child_exit_signal_;
 
+    // Timer for killing child
+    boost::asio::deadline_timer timer_;
+
     enum {buffer_length = settings::session_buffer_length};
     char data_[buffer_length];
 };

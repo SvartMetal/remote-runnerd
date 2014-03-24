@@ -10,7 +10,8 @@ Session::Session(boost::asio::io_service& io_service,
     : strand_(io_service), 
     socket_(io_service),
     process_runner_(config, config_mutex),
-    child_exit_signal_(io_service)
+    child_exit_signal_(io_service),
+    timer_(io_service)
 {
     child_exit_signal_.add(SIGCHLD);
 }
@@ -43,14 +44,22 @@ void Session::do_read() {
                 do_read();
             }
         }));
-
 }
 
 void Session::try_launch_process() {
-    auto attempted = process_runner_.attempt_launch();
-    auto pid = process_runner_.get_pid();
+    auto result = process_runner_.attempt_launch();
+    auto attempted = result.first;
+    auto launched = result.second;
     
-    if (attempted && pid == -1) {
+    if (launched) {
+        auto self(shared_from_this());
+        timer_.async_wait([this, self](boost::system::error_code ec) {
+            auto pid = process_runner_.get_pid();
+            if (pid != -1) {
+                kill(pid, SIGKILL);
+            }
+        });
+    } else if (attempted) {
         // Attempt to launch process failed
         std::string error_msg = "Process can't be run. Invalid command\n";
         do_write(error_msg);
@@ -82,8 +91,11 @@ void Session::handle_child_exit() {
     auto pid = process_runner_.get_pid();    
     if (pid != -1) {
         int status;
-        // Acquiring child exit code
+        // Need to cancel timer task
+        timer_.cancel();
+        // Acquiring child exit code 
         waitpid(pid, &status, 0);
+
         auto stdout = process_runner_.get_execution_result(); 
         if (!status) {
             // All is OK, writing stdout to client

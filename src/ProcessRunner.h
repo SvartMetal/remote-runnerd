@@ -5,6 +5,7 @@
 #include <vector>
 #include <queue>
 #include <string>
+#include <utility>
 
 #include <boost/thread.hpp>
 #include <boost/atomic.hpp>
@@ -20,11 +21,14 @@ public: // methods
     
     void commit_data(const std::string& data);
 
-    bool attempt_launch();
+    std::pair<bool, bool> attempt_launch();
 
     std::vector<char> get_execution_result();
 
-    pid_t get_pid() { return pid_.load(); }
+    pid_t get_pid() { 
+        boost::unique_lock<boost::mutex> lock(queue_mutex_);
+        return pid_.load(); 
+    }
 
 private: // methods
 

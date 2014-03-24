@@ -62,18 +62,13 @@ bool ProcessRunner::search_cmd(const std::string& program) {
     return false;
 }
 
-bool ProcessRunner::attempt_launch() {
+std::pair<bool, bool> ProcessRunner::attempt_launch() {
     boost::unique_lock<boost::mutex> lock(queue_mutex_);
-    if (is_running_) {
-        // Child is already running
-        return false;
+    if (is_running_ || cmd_queue_.empty()) {
+        // Child is already running or nothing to execute
+        return std::make_pair(false, false);
     }
-
-    if (cmd_queue_.empty()) {
-        // Nothing to execute
-        return false;
-    }
-
+    
     auto cmd = cmd_queue_.front();
     cmd_queue_.pop();
     // Checking command
@@ -81,15 +76,22 @@ bool ProcessRunner::attempt_launch() {
     if (args.empty() || !search_cmd(args[0])) {
         // Command is invalid
         pid_ = -1;
-        return true;
+        return std::make_pair(true, false);
     }
     std::cout << cmd << std::endl;
-    // Creating execution context
-    is_running_ = true;
-
+    
     // Create pipe, fork, exec and acquire child's stdout file struct pointer 
     exec_and_bind_stdout(args);
-    return true;
+
+    if (pid_ == -1) {
+        // Launch failed
+        return std::make_pair(true, false);
+    }
+
+    // Launch is successful
+    // Creating execution context
+    is_running_ = true;
+    return std::make_pair(true, true);
 }
 
 // Must be syncronized
