@@ -26,14 +26,14 @@ void ProcessRunner::commit_data(const std::string& data) {
         // Command can't consist only of whitespace symbols
         boost::algorithm::trim(cmd);
 
+        // Erasing current command from data buffer
+        data_.erase(0, pos + 1);
+
         if (cmd.empty()) {
             // Ignoring empty commands
             return;
         }
-
-        // Clearing data buffer for new commands
-        data_.erase(0, pos + 1);
-
+        
         boost::unique_lock<boost::mutex> lock(queue_mutex_);
         cmd_queue_.push(cmd);
     }

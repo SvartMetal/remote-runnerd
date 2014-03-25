@@ -33,6 +33,8 @@ Daemon returns result to the user in format:
 ```
 <Execution status>
 *** STDOUT ***
+<Program stdout>
 *** STDERR ***
+<Program stderr>
 ```
 
