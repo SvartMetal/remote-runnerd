@@ -24,6 +24,9 @@ public: // constructors
 
 public: // methods
     
+    /* 
+        Runs the server.
+    */
     void run();
 
 private: // methods

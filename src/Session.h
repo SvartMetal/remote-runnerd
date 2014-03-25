@@ -24,8 +24,15 @@ public: // constructors
 
 public: // methods
     
+    /*
+        Starts async read operation.
+    */
     void start();
 
+    /*
+        Returns session socket reference.
+        This reference needed for accepting session.
+    */
     Socket& socket();
 
 private: // methods
@@ -112,21 +119,21 @@ void Session<T>::do_read() {
 template<class T>
 void Session<T>::try_launch_process() {
     auto result = process_runner_.attempt_launch();
-    auto attempted = result.first;
-    auto launched = result.second;
+    auto task_id = result.task_id;
     
-    if (launched) {
+    if (result.launched) {
         auto self(this->shared_from_this());
         timer_.expires_from_now(timeout_);
-        timer_.async_wait([this, self](boost::system::error_code ec) {
-            auto pid = process_runner_.get_pid();
-            if (pid != -1) {
-                kill(pid, SIGKILL);
+
+        timer_.async_wait([this, self, task_id](boost::system::error_code ec) {
+            if (ec != boost::asio::error::operation_aborted) {
+                // Checking if timer was not cancelled
+                process_runner_.kill_task(task_id);
             }
         });
-    } else if (attempted) {
+    } else if (result.attempted) {
         // Attempt to launch process failed
-        std::string error_msg = "Process can't be run. Invalid command\n";
+        std::string error_msg = "Invalid command\n";
         do_write(error_msg);
     }
 }
@@ -151,31 +158,29 @@ void Session<T>::do_write(const buffer_type& buffer) {
 
 template<class T>
 void Session<T>::handle_child_exit() {
+    // SIGCHLD received
+    // Need to cancel timer task
+    timer_.cancel();
     // Creating new async task before child can be executed again
     auto self(this->shared_from_this());
     child_exit_signal_.async_wait(boost::bind(&Session::handle_child_exit, self));
 
-    // SIGCHLD received
-    auto pid = process_runner_.get_pid();    
-    if (pid != -1) {
-        int status;
-        // Need to cancel timer task
-        timer_.cancel();
-        // Acquiring child exit code 
-        waitpid(pid, &status, 0);
-
-        auto stdout = process_runner_.get_execution_result(); 
-        if (!status) {
-            // All is OK, writing stdout to client
-            do_write(stdout);
-        } else {
-            std::string error_msg = "Process exited with exit code: ";
-            error_msg += std::to_string(status);
-            error_msg += "\n";
-            do_write(error_msg);
-        }
-    } 
-
+    buffer_type stdout;
+    buffer_type stderr;
+    auto status = process_runner_.write_execution_result(stdout, stderr); 
+    if (!status) {
+        // All is OK, writing stdout to client
+        do_write("Execution is successful\n");
+    } else {
+        std::string error_msg = "Execution error. Exit code: ";
+        error_msg += std::to_string(status);
+        error_msg += "\n";
+        do_write(error_msg);
+    }
+    do_write("*** STDOUT ***\n");
+    do_write(stdout);
+    do_write("*** STDERR ***\n");
+    do_write(stderr);
     // Go on launching queued commands
     try_launch_process();
 }

@@ -44,6 +44,7 @@ Server::Server(short port,
 }
 
 void Server::configure_tcp_endpoint() {
+    // Trying to bind tcp endpoint
     boost::system::error_code ec;
     tcp_acceptor_.open(tcp_endpoint_.protocol());
     tcp_acceptor_.set_option(tcp::acceptor::reuse_address(true));
@@ -73,7 +74,7 @@ void Server::configure_local_endpoint() {
 #endif 
 
 void Server::run() {
-    // Our thread pool
+    // Initializing worker threads pool
     std::vector<std::shared_ptr<boost::thread>> threads;
 
     for (size_t i = 0; i < thread_pool_size_; ++i) {
@@ -88,7 +89,9 @@ void Server::run() {
 }
 
 void Server::tcp_accept() {
-    auto session = std::make_shared<Session<tcp::socket>>(io_service_, timeout_, config_, config_mutex_);
+    // Creating new session to accept
+    auto session = std::make_shared<Session<tcp::socket>>(
+        io_service_, timeout_, config_, config_mutex_);
 
     tcp_acceptor_.async_accept(session->socket(), 
         [this, session](boost::system::error_code ec) {

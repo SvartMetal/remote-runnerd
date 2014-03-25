@@ -13,7 +13,6 @@ Dependencies:
 boost   >= 1.55
 g++     >= 4.8
 ```
-
 ## Building remote runner daemon ##
 Clone this repository, `cd` into it and type `make`.
 To clean use `make clean`.
@@ -29,4 +28,11 @@ pwd     /bin/pwd
 ## Launching remote runner daemon ##
 You can use `./build/remote-runnerd <timeout>` or simply
 `make run` (this will run daemon with `timeout = 5`).
+
+Daemon returns result to the user in format:
+```
+<Execution status>
+*** STDOUT ***
+*** STDERR ***
+```
 

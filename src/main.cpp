@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 
     if (!config) {
         std::cerr << "Config file does not exist. " << std::endl;
-        exit(0);
+        exit(1);
     }
 
     try {
@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
         Server server(settings::port, settings::server_thread_pool_size, timeout);
 
         server.run();
+        exit(0);
     } catch (const boost::bad_lexical_cast& e) {
         std::cerr << "Bad timeout value. " 
             << e.what() << std::endl;
@@ -35,5 +36,5 @@ int main(int argc, char* argv[]) {
         std::cerr << "Something bad happened. "
             << e.what() << std::endl;
     }
-    return 0;
+    return 1;
 }
