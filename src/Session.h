@@ -89,7 +89,8 @@ void Session<T>::start() {
     // Wrapping session in shared pointer to prevent 
     // memory invalidation when handler will be executed
     auto self(this->shared_from_this());
-    child_exit_signal_.async_wait(boost::bind(&Session::handle_child_exit, self));
+    child_exit_signal_.async_wait(strand_.wrap(
+        boost::bind(&Session::handle_child_exit, self)));
 
     // Start reading data asynchronously!
     do_read();
@@ -125,12 +126,12 @@ void Session<T>::try_launch_process() {
         auto self(this->shared_from_this());
         timer_.expires_from_now(timeout_);
 
-        timer_.async_wait([this, self, task_id](boost::system::error_code ec) {
+        timer_.async_wait(strand_.wrap([this, self, task_id](boost::system::error_code ec) {
             if (ec != boost::asio::error::operation_aborted) {
                 // Checking if timer was not cancelled
                 process_runner_.kill_task(task_id);
             }
-        });
+        }));
     } else if (result.attempted) {
         // Attempt to launch process failed
         std::string error_msg = "Invalid command\n";
@@ -163,7 +164,8 @@ void Session<T>::handle_child_exit() {
     timer_.cancel();
     // Creating new async task before child can be executed again
     auto self(this->shared_from_this());
-    child_exit_signal_.async_wait(boost::bind(&Session::handle_child_exit, self));
+    child_exit_signal_.async_wait(
+        strand_.wrap(boost::bind(&Session::handle_child_exit, self)));
 
     buffer_type stdout;
     buffer_type stderr;
