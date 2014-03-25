@@ -1,4 +1,4 @@
-#include <cstdlib>
+#include <sys/wait.h>
 #include <csignal>
 #include <algorithm>
 
