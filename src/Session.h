@@ -7,20 +7,20 @@
 
 #include "settings.h"
 #include "types.h"
+#include "BaseSession.h"
 #include "ProcessRunner.h"
 
 template <typename Socket>
-class Session : public std::enable_shared_from_this<Session<Socket>> {
+class Session : public std::enable_shared_from_this<Session<Socket>>, public BaseSession {
 public: // constructors
 
-    Session(boost::asio::io_service& io_service,
-        size_t timeout, 
-        const config_data_type& config, 
-        boost::shared_mutex& config_mutex);
+    Session(boost::asio::io_service& io_service, size_t timeout, const SyncData& sync_data);
 
     /* Noncopyable */
     Session(const Session&) = delete;
     Session& operator = (const Session&) = delete;
+
+    virtual ~Session() = default;
 
 public: // methods
     
@@ -44,8 +44,7 @@ private: // methods
 
     void try_launch_process();
 
-    void handle_child_exit();
-
+    virtual void handle_child_exit();
 
 private: // fields
     
@@ -54,10 +53,8 @@ private: // fields
 
     Socket socket_;
 
+    // Child process runner
     ProcessRunner process_runner_;
-
-    // Signal set for handling SIGCHLD
-    boost::asio::signal_set child_exit_signal_;
 
     // Timer for killing child
     boost::asio::deadline_timer timer_;
@@ -69,29 +66,17 @@ private: // fields
 };
 
 template<class T>
-Session<T>::Session(boost::asio::io_service& io_service, 
-    size_t timeout,
-    const config_data_type& config,
-    boost::shared_mutex& config_mutex)
-
+Session<T>::Session(boost::asio::io_service& io_service, size_t timeout, const SyncData& sync_data)
     : strand_(io_service), 
     socket_(io_service),
-    process_runner_(config, config_mutex),
-    child_exit_signal_(io_service),
+    process_runner_(sync_data),
     timer_(io_service),
     timeout_(timeout)
-{
-    child_exit_signal_.add(SIGCHLD);
-}
+{}
 
 template<class T>
 void Session<T>::start() {
-    // Wrapping session in shared pointer to prevent 
-    // memory invalidation when handler will be executed
-    auto self(this->shared_from_this());
-    child_exit_signal_.async_wait(strand_.wrap(
-        boost::bind(&Session::handle_child_exit, self)));
-
+    process_runner_.initialize_with_session(this->shared_from_this());
     // Start reading data asynchronously!
     do_read();
 }
@@ -103,7 +88,7 @@ Socket& Session<Socket>::socket() {
 
 template<class T>
 void Session<T>::do_read() {
-    // Wrapping session in shared pointer to prevent 
+    // Wrap session in shared pointer to prevent 
     // memory invalidation when handler will be executed 
     auto self(this->shared_from_this());
 
@@ -127,8 +112,8 @@ void Session<T>::try_launch_process() {
         timer_.expires_from_now(timeout_);
 
         timer_.async_wait(strand_.wrap([this, self, task_id](boost::system::error_code ec) {
+            // Check if timer was not cancelled
             if (ec != boost::asio::error::operation_aborted) {
-                // Checking if timer was not cancelled
                 process_runner_.kill_task(task_id);
             }
         }));
@@ -160,12 +145,8 @@ void Session<T>::do_write(const buffer_type& buffer) {
 template<class T>
 void Session<T>::handle_child_exit() {
     // SIGCHLD received
-    // Need to cancel timer task
+    // Need to cancel timer task because we are finished
     timer_.cancel();
-    // Creating new async task before child can be executed again
-    auto self(this->shared_from_this());
-    child_exit_signal_.async_wait(
-        strand_.wrap(boost::bind(&Session::handle_child_exit, self)));
 
     buffer_type stdout;
     buffer_type stderr;
@@ -183,6 +164,7 @@ void Session<T>::handle_child_exit() {
     do_write(stdout);
     do_write("*** STDERR ***\n");
     do_write(stderr);
+
     // Go on launching queued commands
     try_launch_process();
 }

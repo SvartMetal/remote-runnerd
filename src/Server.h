@@ -29,6 +29,11 @@ public: // methods
     */
     void run();
 
+    /*
+        Dispatches by child pid and handles child exit. 
+    */
+    void process_child_exit(pid_t pid);
+
 private: // methods
     
     void tcp_accept();
@@ -69,6 +74,10 @@ private: // fields
     ConfigParser config_parser_;
     config_data_type config_;
     boost::shared_mutex config_mutex_;
+
+    // SIGCHLD dispatching stuff
+    dispatcher_type pid_to_session_map_;
+    boost::mutex signal_mutex_;
 
 };
 

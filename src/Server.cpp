@@ -38,7 +38,7 @@ Server::Server(short port,
     quit_signals_.async_wait(boost::bind(&Server::handle_stop, this));
     update_config_signal_.async_wait(boost::bind(&Server::handle_update_config, this));
 
-    // Configuring endpoints and starting listening for connections
+    // Configure endpoints and starting listening for connections
     configure_tcp_endpoint();
     configure_local_endpoint();
 }
@@ -74,7 +74,7 @@ void Server::configure_local_endpoint() {
 #endif 
 
 void Server::run() {
-    // Initializing worker threads pool
+    // Initialize worker threads pool
     std::vector<std::shared_ptr<boost::thread>> threads;
 
     for (size_t i = 0; i < thread_pool_size_; ++i) {
@@ -88,10 +88,23 @@ void Server::run() {
     }
 }
 
+void Server::process_child_exit(pid_t pid) {
+    boost::unique_lock<boost::mutex> lock(signal_mutex_);
+
+    auto it = pid_to_session_map_.find(pid);
+    if (it != pid_to_session_map_.end()) {
+        auto session = pid_to_session_map_.at(pid);
+        // Need to erase element from map before handling 
+        // child exit, because someone can obtain same pid
+        pid_to_session_map_.erase(it->first);
+        session->handle_child_exit();
+    }
+}
+
 void Server::tcp_accept() {
-    // Creating new session to accept
-    auto session = std::make_shared<Session<tcp::socket>>(
-        io_service_, timeout_, config_, config_mutex_);
+    SyncData sync_data(config_, config_mutex_, pid_to_session_map_, signal_mutex_);
+    // Create new session to accept
+    auto session = std::make_shared<Session<tcp::socket>>(io_service_, timeout_, sync_data);
 
     tcp_acceptor_.async_accept(session->socket(), 
         [this, session](boost::system::error_code ec) {
@@ -105,8 +118,8 @@ void Server::tcp_accept() {
 
 #ifdef BOOST_ASIO_HAS_LOCAL_SOCKETS
 void Server::local_accept() {
-    auto session = std::make_shared<Session<stream_protocol::socket>>(
-        io_service_, timeout_, config_, config_mutex_);
+    SyncData sync_data(config_, config_mutex_, pid_to_session_map_, signal_mutex_);
+    auto session = std::make_shared<Session<stream_protocol::socket>>(io_service_, timeout_, sync_data);
 
     local_acceptor_.async_accept(session->socket(), 
         [this, session](boost::system::error_code ec) {

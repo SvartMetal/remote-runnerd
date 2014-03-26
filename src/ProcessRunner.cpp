@@ -1,5 +1,6 @@
 #include <sys/wait.h>
 #include <csignal>
+#include <cstdio>
 #include <algorithm>
 
 #include <boost/algorithm/string.hpp>
@@ -7,9 +8,11 @@
 
 #include "ProcessRunner.h"
 
-ProcessRunner::ProcessRunner(const config_data_type& config, boost::shared_mutex& config_mutex)
-    : config_(config),
-    config_mutex_(config_mutex),
+ProcessRunner::ProcessRunner(const SyncData& sync_data)
+    : config_(sync_data.config),
+    config_mutex_(sync_data.config_mutex),
+    pid_to_session_map_(sync_data.pid_to_session_map),
+    signal_mutex_(sync_data.signal_mutex),
     is_running_(false), 
     pid_(-1),
     task_id_(0),
@@ -27,11 +30,11 @@ void ProcessRunner::commit_data(const std::string& data) {
         // Command can't consist only of whitespace symbols
         boost::algorithm::trim(cmd);
 
-        // Erasing current command from data buffer
+        // Erase current command from data buffer
         data_.erase(0, pos + 1);
 
         if (cmd.empty()) {
-            // Ignoring empty commands
+            // Ignore empty commands
             return;
         }
         
@@ -62,7 +65,7 @@ std::pair<bool, std::string> ProcessRunner::search_cmd(const std::string& cmd) {
     // Reader lock
     boost::shared_lock<boost::shared_mutex> lock(config_mutex_);
 
-    // Searching for match
+    // Search for match
     auto found = config_.find(cmd) != config_.end();
     return found ? std::make_pair(true, config_.at(cmd)) : std::make_pair(false, "");
 }
@@ -91,6 +94,8 @@ ProcessRunner::AttemptStatus ProcessRunner::attempt_launch() {
     auto program = search_result.second;
     args[0] = program;
     
+    // Need to lock because of possible race conditions with SIGCHLD receiving
+    boost::unique_lock<boost::mutex> signal_lock(signal_mutex_);
     // Create pipe, fork, exec and acquire child's stdout file struct pointer 
     auto pid = exec_and_bind_streams(args);
 
@@ -100,9 +105,11 @@ ProcessRunner::AttemptStatus ProcessRunner::attempt_launch() {
     }
 
     // Launch is successful
-    // Creating execution context
+    // Create execution context
     is_running_ = true;
     pid_ = pid;
+    // Register pid for future SIGCHLD dispatching
+    pid_to_session_map_[pid] = session_;
     return AttemptStatus(true, true, task_id_);
 }
 
@@ -144,16 +151,19 @@ pid_t ProcessRunner::exec_and_bind_streams(const std::vector<std::string>& args)
         set_parent_descriptors(pipe_stdout, pipe_stderr);
         return pid;
     } else {
+        // Need to unlock captured mutexes 
+        child_mutex_.unlock();
+        signal_mutex_.unlock();
         // We are in the child
         set_child_descriptors(pipe_stdout, pipe_stderr);
-        // Copying argv for new process executing
+        // Copy argv for new process executing
         char** argv = create_argv(args);
 
         execv(program, argv);
         perror("child");
         exit(1);
     }
-    return -1;
+    // return -1;
 }
 
 char** ProcessRunner::create_argv(const std::vector<std::string>& args) const {
@@ -172,13 +182,13 @@ int ProcessRunner::write_execution_result(buffer_type& stdout_buf, buffer_type& 
     if (pid_ == -1) return 1;
 
     int status;
-    // Acquiring child exit code 
+    // Obtain child exit code 
     waitpid(pid_, &status, 0);
 
-    // Copying file struct pointers
+    // Copy file struct pointers
     FILE* stdout = stdout_;
     FILE* stderr = stderr_;
-    // Clearing context for the next launch
+    // Clear context for the next launch
     clear_context();     
     // Ready for new task!
     ++task_id_;
@@ -217,8 +227,10 @@ void ProcessRunner::read_file_to_buf(buffer_type& result, FILE* file) {
 void ProcessRunner::kill_task(size_t id) {
     boost::unique_lock<boost::mutex> lock(child_mutex_);
     if (id == task_id_ && pid_ != -1) {
-        kill(pid_.load(), SIGKILL);
+        kill(pid_, SIGKILL);
     }
-
 }
 
+void ProcessRunner::initialize_with_session(const std::shared_ptr<BaseSession>& session) {
+    session_ = session; 
+}

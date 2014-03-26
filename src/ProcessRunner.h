@@ -16,10 +16,11 @@
 class ProcessRunner {
 public: // constructors
 
-    ProcessRunner(const config_data_type& config, boost::shared_mutex& config_mutex);
+    ProcessRunner(const SyncData& sync_data);
 
 public: // structs
 
+    /* Needed for wrapping attempt_launch method return value */ 
     struct AttemptStatus {
         bool attempted;
         bool launched;
@@ -58,6 +59,11 @@ public: // methods
     */
     void kill_task(size_t id);
 
+    /*
+        Need this method because of 'chicken & egg' problem.
+    */
+    void initialize_with_session(const std::shared_ptr<BaseSession>& session);
+
 private: // methods
 
     // Command parsing utils
@@ -81,14 +87,21 @@ private: // fields
     // Commands buffer
     std::queue<std::string> cmd_queue_;
 
+    // Command queue sync stuff
+    boost::mutex queue_mutex_;
+
     // Reference to config data 
     const config_data_type& config_;
     // Mutex for reader lock
     boost::shared_mutex& config_mutex_;
 
-    // Command queue sync stuff
-    boost::mutex queue_mutex_;
+    // SIGCHLD Dispatching stuff
+    dispatcher_type& pid_to_session_map_;
+    boost::mutex& signal_mutex_;
 
+    // Current session
+    std::shared_ptr<BaseSession> session_;
+    
     /* Child sync stuff */
     boost::atomic<bool> is_running_;
     // Child process identifier, set to -1 in constructor
