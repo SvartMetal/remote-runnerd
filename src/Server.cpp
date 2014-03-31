@@ -15,17 +15,17 @@ Server::Server(short port,
     update_config_signal_(io_service_),
     config_parser_(settings::config_file_name),
     config_(config_parser_.parse_config()),
-    tcp_acceptor_(io_service_), 
+    tcp_acceptor_(io_service_),
     tcp_endpoint_(tcp::endpoint(tcp::v4(), port)),
 
     #ifdef BOOST_ASIO_HAS_LOCAL_SOCKETS
-    local_acceptor_(io_service_), 
+    local_acceptor_(io_service_),
     local_endpoint_(settings::local_socket_address)
     #endif
 
 {
     if (config_.empty()) { throw std::logic_error("Config is invalid. "); }
-    // Setting quit signals 
+    // Setting quit signals
     quit_signals_.add(SIGINT);
     quit_signals_.add(SIGTERM);
 
@@ -34,7 +34,7 @@ Server::Server(short port,
     #endif
     // Signal for config updating
     update_config_signal_.add(SIGHUP);
-    // Setting handlers for signals 
+    // Setting handlers for signals
     quit_signals_.async_wait(boost::bind(&Server::handle_stop, this));
     update_config_signal_.async_wait(boost::bind(&Server::handle_update_config, this));
 
@@ -71,7 +71,7 @@ void Server::configure_local_endpoint() {
     local_acceptor_.listen();
     local_accept();
 }
-#endif 
+#endif
 
 void Server::run() {
     // Initialize worker threads pool
@@ -94,8 +94,11 @@ void Server::process_child_exit(pid_t pid) {
     auto it = pid_to_session_map_.find(pid);
     if (it != pid_to_session_map_.end()) {
         auto session = pid_to_session_map_.at(pid);
-        // Need to erase element from map before handling 
+        // Need to erase element from map before handling
         // child exit, because someone can obtain same pid
+
+        lock.unlock();
+
         pid_to_session_map_.erase(it->first);
         session->handle_child_exit();
     }
@@ -106,7 +109,7 @@ void Server::tcp_accept() {
     // Create new session to accept
     auto session = std::make_shared<Session<tcp::socket>>(io_service_, timeout_, sync_data);
 
-    tcp_acceptor_.async_accept(session->socket(), 
+    tcp_acceptor_.async_accept(session->socket(),
         [this, session](boost::system::error_code ec) {
             if (!ec) {
                 session->start();
@@ -121,7 +124,7 @@ void Server::local_accept() {
     SyncData sync_data(config_, config_mutex_, pid_to_session_map_, signal_mutex_);
     auto session = std::make_shared<Session<stream_protocol::socket>>(io_service_, timeout_, sync_data);
 
-    local_acceptor_.async_accept(session->socket(), 
+    local_acceptor_.async_accept(session->socket(),
         [this, session](boost::system::error_code ec) {
             if (!ec) {
                 session->start();
@@ -142,4 +145,3 @@ void Server::handle_update_config() {
 void Server::handle_stop() {
     io_service_.stop();
 }
-
